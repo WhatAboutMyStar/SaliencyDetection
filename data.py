@@ -6,15 +6,6 @@ from torchvision import transforms
 import torch
 
 def pad_resize_image(inp_img, out_img=None, target_size=None):
-    """
-    Function to pad and resize images to a given size.
-    out_img is None only during inference. During training and testing
-    out_img is NOT None.
-    :param inp_img: A H x W x C input image.
-    :param out_img: A H x W input image of mask.
-    :param target_size: The size of the final images.
-    :return: Re-sized inp_img and out_img
-    """
     h, w, c = inp_img.shape
     size = max(h, w)
 
@@ -43,12 +34,6 @@ def pad_resize_image(inp_img, out_img=None, target_size=None):
 
 
 def random_crop_flip(inp_img, out_img):
-    """
-    Function to randomly crop and flip images.
-    :param inp_img: A H x W x C input image.
-    :param out_img: A H x W input image.
-    :return: The randomly cropped and flipped image.
-    """
     h, w = out_img.shape
 
     rand_h = np.random.randint(h/8)
@@ -66,14 +51,6 @@ def random_crop_flip(inp_img, out_img):
 
 
 def random_rotate(inp_img, out_img, max_angle=25):
-    """
-    Function to randomly rotate images within +max_angle to -max_angle degrees.
-    This algorithm does NOT crops the edges upon rotation.
-    :param inp_img: A H x W x C input image.
-    :param out_img: A H x W input image.
-    :param max_angle: Maximum angle an image can be rotated in either direction.
-    :return: The randomly rotated image.
-    """
     angle = np.random.randint(-max_angle, max_angle)
     h, w = out_img.shape
     center = (w / 2, h / 2)
@@ -92,14 +69,6 @@ def random_rotate(inp_img, out_img, max_angle=25):
 
 
 def random_rotate_lossy(inp_img, out_img, max_angle=25):
-    """
-    Function to randomly rotate images within +max_angle to -max_angle degrees.
-    This algorithm crops the edges upon rotation.
-    :param inp_img: A H x W x C input image.
-    :param out_img: A H x W input image.
-    :param max_angle: Maximum angle an image can be rotated in either direction.
-    :return: The randomly rotated image.
-    """
     angle = np.random.randint(-max_angle, max_angle)
     h, w = out_img.shape
     center = (w / 2, h / 2)
@@ -108,11 +77,6 @@ def random_rotate_lossy(inp_img, out_img, max_angle=25):
 
 
 def random_brightness(inp_img):
-    """
-    Function to randomly perturb the brightness of the input images.
-    :param inp_img: A H x W x C input image.
-    :return: The image with randomly perturbed brightness.
-    """
     contrast = np.random.rand(1) + 0.5
     light = np.random.randint(-20, 20)
     inp_img = contrast * inp_img + light
@@ -161,6 +125,85 @@ class LoadData(data.Dataset):
 
     def __len__(self):
         return len(self.image)
+
+class LoadTest(data.Dataset):
+    def __init__(self, img_path, mask_path, target_size):
+        super(LoadTest, self).__init__()
+        self.img_path = img_path
+        self.mask_path = mask_path
+        self.target_size = target_size
+
+        self.image = os.listdir(img_path)
+        self.mask = []
+        for name in os.listdir(img_path):
+            name = name[:-3] + "png"
+            self.mask.append(name)
+        self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                              std=[0.229, 0.224, 0.225])
+
+    def __getitem__(self, index):
+        image = cv2.imread(self.img_path + self.image[index])
+        # 交换RGB通道
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = image.astype('float32')
+
+        mask = cv2.imread(self.mask_path + self.mask[index], 0)
+        mask = mask.astype('float32')
+        mask = mask / mask.max()
+
+        image, mask = pad_resize_image(image, mask, self.target_size)
+        image /= 255.
+        image = np.transpose(image, axes=(2, 0, 1))
+        image = torch.from_numpy(image).float()
+        image = self.normalize(image)
+
+        mask = np.expand_dims(mask, axis=0)
+        return image, torch.from_numpy(mask).float()
+
+    def __len__(self):
+        return len(self.image)
+
+class LoadTest2(data.Dataset):
+    def __init__(self, path_img_mask, target_size):
+        super().__init__()
+        self.path = path_img_mask
+        self.target_size = target_size
+
+        img_msk = os.listdir(path_img_mask)
+        self.img = []
+        self.mask = []
+        for name in img_msk:
+            if name.endswith(".jpg"):
+                self.img.append(name)
+        for name in self.img:
+            name = name[:-3] + "png"
+            self.mask.append(name)
+
+        self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                              std=[0.229, 0.224, 0.225])
+
+    def __getitem__(self, index):
+        image = cv2.imread(self.path + self.img[index])
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = image.astype('float32')
+
+        mask = cv2.imread(self.path + self.mask[index], 0)
+        mask = mask.astype('float32')
+        # mask = mask / mask.max()
+        mask = mask / 255.
+
+        image, mask = pad_resize_image(image, mask, self.target_size)
+        image /= 255.
+        image = np.transpose(image, axes=(2, 0, 1))
+        image = torch.from_numpy(image).float()
+        image = self.normalize(image)
+
+        mask = np.expand_dims(mask, axis=0)
+        return image, torch.from_numpy(mask).float()
+
+    def __len__(self):
+        return len(self.img)
+
 
 if __name__ == '__main__':
     path_image = "./DUTS/DUTS-TR/DUTS-TR-Image/"
